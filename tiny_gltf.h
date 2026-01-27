@@ -263,7 +263,13 @@ class Value {
   explicit Value(bool b) : type_(BOOL_TYPE) { boolean_value_ = b; }
   explicit Value(int i) : type_(INT_TYPE) {
     int_value_ = i;
+    int64_value_ = i;
     real_value_ = i;
+  }
+  explicit Value(int64_t i) : type_(INT_TYPE) {
+    int_value_ = static_cast<int>(i);
+    int64_value_ = i;
+    real_value_ = static_cast<double>(i);
   }
   explicit Value(double n) : type_(REAL_TYPE) { real_value_ = n; }
   explicit Value(const std::string &s) : type_(STRING_TYPE) {
@@ -382,6 +388,7 @@ class Value {
   int type_ = NULL_TYPE;
 
   int int_value_ = 0;
+  int64_t int64_value_ = 0;
   double real_value_ = 0.0;
   std::string string_value_;
   std::vector<unsigned char> binary_value_;
@@ -406,6 +413,7 @@ class Value {
 TINYGLTF_VALUE_GET(bool, boolean_value_)
 TINYGLTF_VALUE_GET(double, real_value_)
 TINYGLTF_VALUE_GET(int, int_value_)
+TINYGLTF_VALUE_GET(int64_t, int64_value_)
 TINYGLTF_VALUE_GET(std::string, string_value_)
 TINYGLTF_VALUE_GET(std::vector<unsigned char>, binary_value_)
 TINYGLTF_VALUE_GET(Value::Array, array_value_)
@@ -1026,6 +1034,7 @@ class Node {
 
 struct Buffer {
   std::string name;
+  size_t byteLength{0};
   std::vector<unsigned char> data;
   std::string
       uri;  // considered as required here but not in the spec (need to clarify)
@@ -3696,9 +3705,15 @@ static bool ParseJsonAsValue(Value *ret, const detail::json &o) {
       break;
     case Type::kNumberType:
       if (!o.IsDouble()) {
-        int i = 0;
-        detail::GetInt(o, i);
-        val = Value(i);
+        if (o.IsInt64())
+        {
+          int64_t i = o.GetInt64();
+          val = Value(i);
+        } else {
+          int i = 0;
+          detail::GetInt(o, i);
+          val = Value(i);
+        } 
       } else {
         double d = 0.0;
         detail::GetDouble(o, d);
@@ -3740,7 +3755,7 @@ static bool ParseJsonAsValue(Value *ret, const detail::json &o) {
       break;
     case detail::json::value_t::number_integer:
     case detail::json::value_t::number_unsigned:
-      val = Value(static_cast<int>(o.get<int64_t>()));
+      val = Value(o.get<int64_t>());
       break;
     case detail::json::value_t::number_float:
       val = Value(o.get<double>());
@@ -3880,11 +3895,11 @@ static bool ParseUnsignedProperty(size_t *ret, std::string *err,
   bool isUValue;
 #ifdef TINYGLTF_USE_RAPIDJSON
   isUValue = false;
-  if (value.IsUint()) {
-    uValue = value.GetUint();
+  if (value.IsUint64()) {
+    uValue   = value.GetUint64();
     isUValue = true;
-  } else if (value.IsUint64()) {
-    uValue = value.GetUint64();
+  } else if (value.IsUint()) {
+    uValue = value.GetUint();
     isUValue = true;
   }
 #else
@@ -4533,6 +4548,26 @@ static bool ParseBuffer(Buffer *buffer, std::string *err, const detail::json &o,
     return false;
   }
 
+  buffer->byteLength = byteLength;
+
+  ParseStringProperty(&buffer->name, err, o, "name", false);
+
+  ParseExtrasAndExtensions(buffer, err, o, store_original_json_for_extras_and_extensions);
+
+  if (buffer->extensions.count("EXT_meshopt_compression") != 0) {
+    auto const& ext = buffer->extensions["EXT_meshopt_compression"];
+    if (ext.Has("fallback") && ext.Get("fallback").IsBool() && ext.Get("fallback").Get<bool>()) {
+      return true;
+    }
+  }
+
+  if (buffer->extensions.count("KHR_meshopt_compression") != 0) {
+    auto const& ext = buffer->extensions["KHR_meshopt_compression"];
+    if (ext.Has("fallback") && ext.Get("fallback").IsBool() && ext.Get("fallback").Get<bool>()) {
+      return true;
+    }
+  }
+
   // In glTF 2.0, uri is not mandatory anymore
   buffer->uri.clear();
   ParseStringProperty(&buffer->uri, err, o, "uri", false, "Buffer");
@@ -4541,16 +4576,6 @@ static bool ParseBuffer(Buffer *buffer, std::string *err, const detail::json &o,
   if (!is_binary && buffer->uri.empty()) {
     if (err) {
       (*err) += "'uri' is missing from non binary glTF file buffer.\n";
-    }
-  }
-
-  detail::json_const_iterator type;
-  if (detail::FindMember(o, "type", type)) {
-    std::string typeStr;
-    if (detail::GetString(detail::GetValue(type), typeStr)) {
-      if (typeStr.compare("arraybuffer") == 0) {
-        // buffer.type = "arraybuffer";
-      }
     }
   }
 
@@ -4633,10 +4658,7 @@ static bool ParseBuffer(Buffer *buffer, std::string *err, const detail::json &o,
     }
   }
 
-  ParseStringProperty(&buffer->name, err, o, "name", false);
 
-  ParseExtrasAndExtensions(buffer, err, o,
-                           store_original_json_for_extras_and_extensions);
 
   return true;
 }
