@@ -117,7 +117,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off -DTINYGLTF_BUILD_TESTS=ON ..
+          cmake -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off -DTINYGLTF_BUILD_TESTS=ON ..
 
       - name: Build
         run: cmake --build build --config Release
@@ -141,7 +141,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A Win32 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off -DTINYGLTF_BUILD_TESTS=ON ..
+          cmake -A Win32 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off -DTINYGLTF_BUILD_TESTS=ON ..
 
       - name: Build
         run: cmake --build build --config Release
@@ -161,7 +161,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -G "Visual Studio 17 2022" -A ARM64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off ..
+          cmake -A ARM64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off ..
 
       - name: Build
         run: cmake --build build --config Release

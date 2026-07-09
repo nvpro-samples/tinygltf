@@ -66,7 +66,7 @@ jobs:
           mkdir build
           cd build
           cmake --help
-          cmake -G "Visual Studio 17 2022" -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=On -DTINYGLTF_BUILD_TESTS=ON ..
+          cmake -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=On -DTINYGLTF_BUILD_TESTS=ON ..
           cd ..
       - name: Build
         run: cmake --build build --config Release
