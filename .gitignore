@@ -1,4 +1,5 @@
 # CMake
+/build/
 CMakeCache.txt
 CMakeFiles
 CMakeScripts
@@ -20,6 +21,9 @@ premake5.tar.gz
 *.sln
 *.vcxproj*
 .vs
+
+# default cmake build dir
+build/
 
 #binary directories
 bin/
@@ -66,10 +70,35 @@ imgui.ini
 *.app
 
 loader_example
+# Compiled test binaries (built by tests/Makefile, CMakeLists.txt, meson.build)
 tests/tester
 tests/tester_noexcept
+tests/tester_customjson
+tests/tester_intensive_customjson
+tests/tester_v3
+tests/tester_v3_c
+tests/tester_v3_c_cpp
+tests/tester_v3_c_v1port
+tests/tester_v3_c_v1port_cpp
+tests/tester_v3_freestanding
+tests/tester_v3_json_c
+tests/fuzzer/fuzz_gltf
+tests/fuzzer/fuzz_gltf_customjson
 tests/issue-97.gltf
 tests/issue-261.gltf
+tests/issue-495-external.gltf
+# Test-generated output files (written by tester.cc during test run)
+tests/Cube.gltf
+tests/Cube.bin
+tests/Cube.glb
+tests/Cube_BaseColor.png
+tests/Cube_MetallicRoughness.png
+tests/Cube_with_embedded_images.gltf
+tests/Cube_with_image_files.gltf
+tests/tmp.glb
+tests/ issue-236.gltf
+tests/ issue-236.bin
+tests/ 2x2 image  has multiple      spaces.png
 
 # unignore
 !Makefile

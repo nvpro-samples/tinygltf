@@ -1,0 +1,537 @@
+name: Comprehensive CI
+
+on:
+  push:
+    branches:
+      - master
+      - release
+      - devel
+  pull_request:
+    branches:
+      - master
+      - release
+      - devel
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Linux x64 - GCC
+  linux-gcc-x64:
+    runs-on: ubuntu-latest
+    name: Linux x64 (GCC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -B build -DTINYGLTF_BUILD_LOADER_EXAMPLE=ON -DTINYGLTF_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run loader_example
+        run: ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # Linux x64 - Clang 21
+  linux-clang-x64:
+    runs-on: ubuntu-24.04
+    name: Linux x64 (Clang 21)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Clang 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_C_COMPILER=clang-21 -DCMAKE_CXX_COMPILER=clang++-21 -DTINYGLTF_BUILD_LOADER_EXAMPLE=ON -DTINYGLTF_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run loader_example
+        run: |
+          ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # Linux ARM64 - GCC (native)
+  linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    name: Linux ARM64 (GCC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -B build -DTINYGLTF_BUILD_LOADER_EXAMPLE=ON -DTINYGLTF_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run loader_example
+        run: ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # macOS ARM64 Apple Silicon
+  macos-arm64:
+    runs-on: macos-14
+    name: macOS ARM64 Apple Silicon (Clang)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure
+        run: cmake -B build -DTINYGLTF_BUILD_LOADER_EXAMPLE=ON -DTINYGLTF_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run loader_example
+        run: ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # Windows x64 - MSVC
+  windows-msvc-x64:
+    runs-on: windows-latest
+    name: Windows x64 (MSVC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure
+        run: |
+          mkdir build
+          cd build
+          cmake -G "Visual Studio 17 2022" -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off -DTINYGLTF_BUILD_TESTS=ON ..
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run loader_example
+        run: |
+          .\build\Release\loader_example.exe models\Cube\Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  # Windows x86 - MSVC
+  windows-msvc-x86:
+    runs-on: windows-latest
+    name: Windows x86 (MSVC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure
+        run: |
+          mkdir build
+          cd build
+          cmake -G "Visual Studio 17 2022" -A Win32 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off -DTINYGLTF_BUILD_TESTS=ON ..
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  # Windows ARM64 - MSVC (cross-compile)
+  windows-msvc-arm64:
+    runs-on: windows-latest
+    name: Windows ARM64 (MSVC) - Cross-compile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Configure
+        run: |
+          mkdir build
+          cd build
+          cmake -G "Visual Studio 17 2022" -A ARM64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=Off ..
+
+      - name: Build
+        run: cmake --build build --config Release
+
+  # Windows MinGW - MSYS2
+  windows-mingw-msys2:
+    runs-on: windows-latest
+    name: Windows x64 (MinGW MSYS2)
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: base-devel
+          pacboy: >-
+            cc:p cmake:p ninja:p
+          update: true
+          release: false
+
+      - name: Build with CMake
+        run: |
+          cmake -G"Ninja" -S . -B build -DTINYGLTF_BUILD_TESTS=ON
+          cmake --build build
+
+      - name: Run loader_example
+        run: |
+          ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # Linux -> Windows MinGW Cross-compile
+  linux-mingw-cross:
+    runs-on: ubuntu-latest
+    name: Linux→Windows (MinGW Cross) - Build Only
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install MinGW
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential mingw-w64
+
+      - name: Build
+        run: |
+          x86_64-w64-mingw32-g++ -std=c++11 -o loader_example.exe loader_example.cc
+
+  # Special Configuration: No Exceptions
+  linux-noexception:
+    runs-on: ubuntu-latest
+    name: Linux x64 (GCC) - No Exceptions
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build loader_example
+        run: |
+          g++ -DTINYGLTF_NOEXCEPTION -std=c++11 -o loader_example loader_example.cc
+
+      - name: Run loader_example
+        run: |
+          ./loader_example models/Cube/Cube.gltf
+
+      - name: Build and run unit tests
+        run: |
+          cd tests
+          g++ -DTINYGLTF_NOEXCEPTION -I../ -std=c++11 -g -O0 -o tester_noexcept tester.cc
+          ./tester_noexcept
+
+  # Special Configuration: Header-Only Mode
+  linux-header-only:
+    runs-on: ubuntu-latest
+    name: Linux x64 (GCC) - Header-Only Mode
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build with CMake Header-Only
+        run: |
+          mkdir build
+          cmake -B build -DTINYGLTF_HEADER_ONLY=ON -DTINYGLTF_BUILD_LOADER_EXAMPLE=ON -DTINYGLTF_BUILD_TESTS=ON
+          cmake --build build
+
+      - name: Run loader_example
+        run: |
+          ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # v3 C tests through Meson on the primary desktop platforms.
+  v3-c-meson:
+    runs-on: ${{ matrix.os }}
+    name: v3 C Meson (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Meson
+        run: python -m pip install meson ninja
+
+      - name: Configure
+        run: meson setup build-meson -Dtests=true
+
+      - name: Build
+        run: meson compile -C build-meson
+
+      - name: Run v3 C tests
+        run: meson test -C build-meson --print-errorlogs
+
+  # Special Configuration: RapidJSON Backend
+  linux-rapidjson:
+    runs-on: ubuntu-latest
+    name: Linux x64 (GCC) - RapidJSON Backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Clone RapidJSON
+        run: |
+          git clone https://github.com/Tencent/rapidjson
+
+      - name: Configure
+        run: |
+          cmake -B build -DTINYGLTF_USE_RAPIDJSON=ON -DTINYGLTF_BUILD_LOADER_EXAMPLE=ON -DTINYGLTF_BUILD_TESTS=ON -DCMAKE_PREFIX_PATH=$PWD/rapidjson
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run loader_example
+        run: |
+          ./build/loader_example models/Cube/Cube.gltf
+
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure
+
+  # Special Configuration: AddressSanitizer
+  linux-asan:
+    runs-on: ubuntu-latest
+    name: Linux x64 (Clang) - AddressSanitizer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build loader_example with ASan
+        run: |
+          clang++ -fsanitize=address -std=c++11 -g -O1 -o loader_example loader_example.cc
+
+      - name: Run loader_example
+        run: |
+          ./loader_example models/Cube/Cube.gltf
+
+      - name: Build and run unit tests with ASan
+        run: |
+          cd tests
+          clang++ -fsanitize=address -I../ -std=c++11 -g -O1 -o tester tester.cc
+          ./tester
+
+  # Special Configuration: UndefinedBehaviorSanitizer
+  linux-ubsan:
+    runs-on: ubuntu-latest
+    name: Linux x64 (Clang) - UndefinedBehaviorSanitizer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build loader_example with UBSan
+        run: |
+          clang++ -fsanitize=undefined -std=c++11 -g -O1 -o loader_example loader_example.cc
+
+      - name: Run loader_example
+        run: |
+          ./loader_example models/Cube/Cube.gltf
+
+      - name: Build and run unit tests with UBSan
+        run: |
+          cd tests
+          clang++ -fsanitize=undefined -I../ -std=c++11 -g -O1 -o tester tester.cc
+          ./tester
+
+  # v3 C runtime: internal security regression tests + ported v1 unit tests.
+  v3-c-tests:
+    runs-on: ubuntu-latest
+    name: v3 C tests (Linux x64, GCC)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build tester_v3_c
+        run: |
+          cd tests
+          cc -I../ -std=c11 -g -O0 -Wall -Wextra -Wpedantic -Werror -DTINYGLTF3_ENABLE_FS \
+             -o tester_v3_c tester_v3_c.c ../tiny_gltf_v3.c
+
+      - name: Build tester_v3_c_v1port
+        run: |
+          cd tests
+          cc -I../ -std=c11 -g -O0 -Wall -Wextra -Wpedantic -Werror -DTINYGLTF3_ENABLE_FS \
+             -o tester_v3_c_v1port tester_v3_c_v1port.c ../tiny_gltf_v3.c
+
+      - name: Run tester_v3_c (security regressions)
+        run: |
+          cd tests
+          ./tester_v3_c
+
+      - name: Run tester_v3_c_v1port (18 ported unit tests)
+        run: |
+          cd tests
+          ./tester_v3_c_v1port
+
+  # v3 C runtime under stock Ubuntu clang.
+  v3-c-tests-clang:
+    runs-on: ubuntu-latest
+    name: v3 C tests (Linux x64, Clang)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Build tester_v3_c
+        run: |
+          cd tests
+          clang -I../ -std=c11 -g -O0 -Werror -Weverything \
+                -Wno-padded -Wno-unsafe-buffer-usage -Wno-switch-default \
+                -Wno-format-nonliteral -Wno-float-equal -Wno-cast-align \
+                -Wno-declaration-after-statement -Wno-unknown-warning-option \
+                -Wno-pre-c11-compat \
+                -DTINYGLTF3_ENABLE_FS \
+                -o tester_v3_c tester_v3_c.c ../tiny_gltf_v3.c
+
+      - name: Build tester_v3_c_v1port
+        run: |
+          cd tests
+          clang -I../ -std=c11 -g -O0 -Werror -Weverything \
+                -Wno-padded -Wno-unsafe-buffer-usage -Wno-switch-default \
+                -Wno-format-nonliteral -Wno-float-equal -Wno-cast-align \
+                -Wno-declaration-after-statement -Wno-unknown-warning-option \
+                -Wno-pre-c11-compat \
+                -DTINYGLTF3_ENABLE_FS \
+                -o tester_v3_c_v1port tester_v3_c_v1port.c ../tiny_gltf_v3.c
+
+      - name: Run tester_v3_c
+        run: |
+          cd tests
+          ./tester_v3_c
+
+      - name: Run tester_v3_c_v1port
+        run: |
+          cd tests
+          ./tester_v3_c_v1port
+
+  # v3 C runtime under bleeding-edge clang 21 (matches local dev environment).
+  v3-c-tests-clang21:
+    runs-on: ubuntu-24.04
+    name: v3 C tests (Linux x64, Clang 21)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install clang 21
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 21
+
+      - name: Build tester_v3_c
+        run: |
+          cd tests
+          clang-21 -I../ -std=c11 -g -O0 -Werror -Weverything \
+                   -Wno-padded -Wno-unsafe-buffer-usage -Wno-switch-default \
+                   -Wno-format-nonliteral -Wno-float-equal -Wno-cast-align \
+                   -Wno-declaration-after-statement -Wno-unknown-warning-option \
+                -Wno-pre-c11-compat \
+                   -DTINYGLTF3_ENABLE_FS \
+                   -o tester_v3_c tester_v3_c.c ../tiny_gltf_v3.c
+
+      - name: Build tester_v3_c_v1port
+        run: |
+          cd tests
+          clang-21 -I../ -std=c11 -g -O0 -Werror -Weverything \
+                   -Wno-padded -Wno-unsafe-buffer-usage -Wno-switch-default \
+                   -Wno-format-nonliteral -Wno-float-equal -Wno-cast-align \
+                   -Wno-declaration-after-statement -Wno-unknown-warning-option \
+                -Wno-pre-c11-compat \
+                   -DTINYGLTF3_ENABLE_FS \
+                   -o tester_v3_c_v1port tester_v3_c_v1port.c ../tiny_gltf_v3.c
+
+      - name: Run tester_v3_c
+        run: |
+          cd tests
+          ./tester_v3_c
+
+      - name: Run tester_v3_c_v1port
+        run: |
+          cd tests
+          ./tester_v3_c_v1port
+
+  # v3 C runtime built with MSVC at warning-level 4 (/W4 /WX).
+  v3-c-tests-msvc:
+    runs-on: windows-latest
+    name: v3 C tests (Windows x64, MSVC /W4)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build and run tester_v3_c
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd tests
+          cl /nologo /W4 /WX /std:c11 /Zi /Od /D_CRT_SECURE_NO_WARNINGS /DTINYGLTF3_ENABLE_FS /I.. tester_v3_c.c ..\tiny_gltf_v3.c /Fe:tester_v3_c.exe
+          tester_v3_c.exe
+
+      - name: Build and run tester_v3_c_v1port
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cd tests
+          cl /nologo /W4 /WX /std:c11 /Zi /Od /D_CRT_SECURE_NO_WARNINGS /DTINYGLTF3_ENABLE_FS /I.. tester_v3_c_v1port.c ..\tiny_gltf_v3.c /Fe:tester_v3_c_v1port.exe
+          tester_v3_c_v1port.exe
+
+  # v3 C runtime under ASan + UBSan for memory-safety + UB checks.
+  v3-c-tests-sanitizers:
+    runs-on: ubuntu-latest
+    name: v3 C tests (Clang ASan + UBSan)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Build tester_v3_c with ASan + UBSan
+        run: |
+          cd tests
+          clang -I../ -std=c11 -g -O1 -DTINYGLTF3_ENABLE_FS \
+                -fsanitize=address,undefined -fno-omit-frame-pointer \
+                -o tester_v3_c tester_v3_c.c ../tiny_gltf_v3.c
+
+      - name: Build tester_v3_c_v1port with ASan + UBSan
+        run: |
+          cd tests
+          clang -I../ -std=c11 -g -O1 -DTINYGLTF3_ENABLE_FS \
+                -fsanitize=address,undefined -fno-omit-frame-pointer \
+                -o tester_v3_c_v1port tester_v3_c_v1port.c ../tiny_gltf_v3.c
+
+      - name: Run tester_v3_c
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          cd tests
+          ./tester_v3_c
+
+      - name: Run tester_v3_c_v1port
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          cd tests
+          ./tester_v3_c_v1port

@@ -14,7 +14,7 @@ jobs:
 
   #  steps:
   #    - name: Checkout
-  #      uses: actions/checkout@v1
+  #      uses: actions/checkout@v5
 
   #    - name: Build
   #      run: |
@@ -40,7 +40,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
 
       - name: Build
         run: |
@@ -60,16 +60,18 @@ jobs:
     # https://help.github.com/en/actions/reference/software-installed-on-github-hosted-runners
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v5
       - name: Configure
         run: |
           mkdir build
           cd build
           cmake --help
-          cmake -G "Visual Studio 17 2022" -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=On ..
+          cmake -G "Visual Studio 17 2022" -A x64 -DTINYGLTF_BUILD_LOADER_EXAMPLE=On -DTINYGLTF_BUILD_GL_EXAMPLES=Off -DTINYGLTF_BUILD_VALIDATOR_EXAMPLE=On -DTINYGLTF_BUILD_TESTS=ON ..
           cd ..
       - name: Build
         run: cmake --build build --config Release
+      - name: Run tests
+        run: ctest --test-dir build -C Release --output-on-failure
 
 
   build-linux:
@@ -78,7 +80,7 @@ jobs:
     name: Buld with gcc
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: build
       run: |
         g++ -std=c++11 -o loader_example loader_example.cc
@@ -100,6 +102,23 @@ jobs:
         ./tester_noexcept
         cd ..
 
+    - name: v3_c_tests
+      run: |
+        cd tests
+        cc -I../ -std=c11 -g -O0 -DTINYGLTF3_ENABLE_FS \
+           -o tester_v3_c tester_v3_c.c ../tiny_gltf_v3.c
+        ./tester_v3_c
+        cc -I../ -std=c11 -g -O0 -DTINYGLTF3_ENABLE_FS \
+           -o tester_v3_c_v1port tester_v3_c_v1port.c ../tiny_gltf_v3.c
+        ./tester_v3_c_v1port
+        cc -I../ -std=c11 -g -O0 \
+           -o tester_v3_json_c tester_v3_json_c.c
+        ./tester_v3_json_c
+        cc -I../ -std=c11 -ffreestanding -g -O0 \
+           -o tester_v3_freestanding tester_v3_freestanding.c
+        ./tester_v3_freestanding
+        cd ..
+
 
   build-rapidjson-linux:
 
@@ -107,7 +126,7 @@ jobs:
     name: Buld with gcc + rapidjson
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v5
     - name: build
       run: |
         git clone https://github.com/Tencent/rapidjson
@@ -140,7 +159,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
       - name: Build
         run: |
             sudo apt-get update
@@ -158,7 +177,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v5
       - name: Build
         run: |
             clang++ -std=c++11 -g -O0 -o loader_example loader_example.cc
@@ -166,4 +185,3 @@ jobs:
 
             git clone https://github.com/Tencent/rapidjson
             clang++ -DTINYGLTF_USE_RAPIDJSON -I./rapidjson/include/rapidjson -std=c++11 -g -O0 -o loader_example loader_example.cc
-
