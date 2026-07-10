@@ -1,6 +1,6 @@
 project(tinygltf-validator CXX)
 
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.5)
 
 # exe
 add_executable(tinygltf-validator
