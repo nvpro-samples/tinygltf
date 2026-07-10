@@ -1017,6 +1017,7 @@ class Node {
   int mesh{-1};
   int light{-1};    // light source index (KHR_lights_punctual)
   int emitter{-1};  // audio emitter index (KHR_audio)
+  int externalAsset{-1};  // external asset index (glTF 2.1 external assets)
   std::vector<int> lods; // level of detail nodes (MSFT_lod)
   std::vector<int> children;
   std::vector<double> rotation;     // length must be 0 or 4
@@ -1084,6 +1085,63 @@ struct Scene {
   Scene() = default;
   DEFAULT_METHODS(Scene)
   bool operator==(const Scene &) const;
+};
+
+// glTF 2.1 - unified file references (top-level "files" array).
+// An alias remaps an inner `uri` of a referenced glTF/glb file to another
+// entry in Model::files. Aliases are not inherited from the parent asset.
+struct FileAlias {
+  std::string name;
+  std::string alias;  // string matched against an inner path (required)
+  int file{-1};       // index into Model::files (required)
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  FileAlias() = default;
+  DEFAULT_METHODS(FileAlias)
+};
+
+// glTF 2.1 - a file reference to external file data. The data is either stored
+// externally and referenced by `uri`, or stored in a buffer and referenced by
+// `bufferView` (exactly one of the two). `mimeType` is required.
+struct File {
+  std::string name;
+  std::string uri;       // external file URI/IRI (exclusive with bufferView)
+  std::string mimeType;  // media type of the file (required)
+  int bufferView{-1};    // buffer view index (exclusive with uri)
+  std::vector<FileAlias> aliases;  // inner-URI overrides (gltf/glb files only)
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  File() = default;
+  DEFAULT_METHODS(File)
+};
+
+// glTF 2.1 - an external glTF asset (top-level "externalAssets" array),
+// referenced by a node's `externalAsset` property.
+struct ExternalAsset {
+  std::string name;
+  int file{-1};  // index into Model::files (required)
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  ExternalAsset() = default;
+  DEFAULT_METHODS(ExternalAsset)
 };
 
 struct SpotLight {
@@ -1229,6 +1287,8 @@ class Model {
   std::vector<Light> lights;
   std::vector<AudioEmitter> audioEmitters;
   std::vector<AudioSource> audioSources;
+  std::vector<File> files;                    // glTF 2.1 unified file references
+  std::vector<ExternalAsset> externalAssets;  // glTF 2.1 external assets
 
   int defaultScene{-1};
   std::vector<std::string> extensionsUsed;
@@ -5323,6 +5383,10 @@ static bool ParseNode(Node *node, std::string *err, const detail::json &o,
   ParseIntegerProperty(&mesh, err, o, "mesh", false);
   node->mesh = mesh;
 
+  int externalAsset = -1;
+  ParseIntegerProperty(&externalAsset, err, o, "externalAsset", false);
+  node->externalAsset = externalAsset;
+
   node->children.clear();
   ParseIntegerArrayProperty(&node->children, err, o, "children", false);
 
@@ -5412,6 +5476,74 @@ static bool ParseScene(Scene *scene, std::string *err, const detail::json &o,
     }
   }
 
+  return true;
+}
+
+static bool ParseFileAlias(FileAlias *alias, std::string *err,
+                           const detail::json &o,
+                           bool store_original_json_for_extras_and_extensions) {
+  ParseStringProperty(&alias->name, err, o, "name", false);
+  ParseStringProperty(&alias->alias, err, o, "alias", true);
+
+  int file = -1;
+  ParseIntegerProperty(&file, err, o, "file", true);
+  alias->file = file;
+
+  ParseExtrasAndExtensions(alias, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
+static bool ParseFile(File *file, std::string *err, const detail::json &o,
+                      bool store_original_json_for_extras_and_extensions) {
+  ParseStringProperty(&file->name, err, o, "name", false);
+  ParseStringProperty(&file->uri, err, o, "uri", false);
+  ParseStringProperty(&file->mimeType, err, o, "mimeType", true);
+
+  int bufferView = -1;
+  ParseIntegerProperty(&bufferView, err, o, "bufferView", false);
+  file->bufferView = bufferView;
+
+  file->aliases.clear();
+  detail::json_const_iterator aliasesObject;
+  if (detail::FindMember(o, "aliases", aliasesObject) &&
+      detail::IsArray(detail::GetValue(aliasesObject))) {
+    detail::json_const_array_iterator aliasesEnd =
+        detail::ArrayEnd(detail::GetValue(aliasesObject));
+    for (detail::json_const_array_iterator i =
+             detail::ArrayBegin(detail::GetValue(aliasesObject));
+         i != aliasesEnd; ++i) {
+      if (!detail::IsObject(*i)) {
+        if (err) {
+          (*err) += "`aliases' does not contain a JSON object.";
+        }
+        return false;
+      }
+      FileAlias alias;
+      if (!ParseFileAlias(&alias, err, *i,
+                          store_original_json_for_extras_and_extensions)) {
+        return false;
+      }
+      file->aliases.emplace_back(std::move(alias));
+    }
+  }
+
+  ParseExtrasAndExtensions(file, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
+static bool ParseExternalAsset(
+    ExternalAsset *asset, std::string *err, const detail::json &o,
+    bool store_original_json_for_extras_and_extensions) {
+  ParseStringProperty(&asset->name, err, o, "name", false);
+
+  int file = -1;
+  ParseIntegerProperty(&file, err, o, "file", true);
+  asset->file = file;
+
+  ParseExtrasAndExtensions(asset, err, o,
+                           store_original_json_for_extras_and_extensions);
   return true;
 }
 
@@ -6463,6 +6595,55 @@ bool TinyGLTF::LoadFromString(Model *model, std::string *err, std::string *warn,
       model->scenes.emplace_back(std::move(scene));
       return true;
     });
+
+    if (!success) {
+      return false;
+    }
+  }
+
+  // 8b. Parse files (glTF 2.1 unified file references).
+  {
+    bool success = ForEachInArray(v, "files", [&](const detail::json &o) {
+      if (!detail::IsObject(o)) {
+        if (err) {
+          (*err) += "`files' does not contain an JSON object.";
+        }
+        return false;
+      }
+      File file;
+      if (!ParseFile(&file, err, o,
+                     store_original_json_for_extras_and_extensions_)) {
+        return false;
+      }
+
+      model->files.emplace_back(std::move(file));
+      return true;
+    });
+
+    if (!success) {
+      return false;
+    }
+  }
+
+  // 8c. Parse external assets (glTF 2.1).
+  {
+    bool success =
+        ForEachInArray(v, "externalAssets", [&](const detail::json &o) {
+          if (!detail::IsObject(o)) {
+            if (err) {
+              (*err) += "`externalAssets' does not contain an JSON object.";
+            }
+            return false;
+          }
+          ExternalAsset asset;
+          if (!ParseExternalAsset(&asset, err, o,
+                                  store_original_json_for_extras_and_extensions_)) {
+            return false;
+          }
+
+          model->externalAssets.emplace_back(std::move(asset));
+          return true;
+        });
 
     if (!success) {
       return false;
@@ -8030,6 +8211,10 @@ static void SerializeGltfNode(const Node &node, detail::json &o) {
     SerializeNumberArrayProperty<double>("weights", node.weights, o);
   }
 
+  if (node.externalAsset != -1) {
+    SerializeNumberProperty<int>("externalAsset", node.externalAsset, o);
+  }
+
   SerializeExtrasAndExtensions(node, o);
 
   // Note(agnat): If the asset was loaded from disk, the node may already
@@ -8271,6 +8456,52 @@ static void SerializeGltfTexture(const Texture &texture, detail::json &o) {
   SerializeExtrasAndExtensions(texture, o);
 }
 
+static void SerializeGltfFileAlias(const FileAlias &alias, detail::json &o) {
+  SerializeStringProperty("alias", alias.alias, o);
+  if (alias.file != -1) {
+    SerializeNumberProperty<int>("file", alias.file, o);
+  }
+  if (!alias.name.empty()) {
+    SerializeStringProperty("name", alias.name, o);
+  }
+  SerializeExtrasAndExtensions(alias, o);
+}
+
+static void SerializeGltfFile(const File &file, detail::json &o) {
+  if (!file.uri.empty()) {
+    SerializeStringProperty("uri", file.uri, o);
+  }
+  if (file.bufferView != -1) {
+    SerializeNumberProperty<int>("bufferView", file.bufferView, o);
+  }
+  SerializeStringProperty("mimeType", file.mimeType, o);
+  if (!file.aliases.empty()) {
+    detail::json aliases;
+    detail::JsonReserveArray(aliases, file.aliases.size());
+    for (unsigned int i = 0; i < file.aliases.size(); ++i) {
+      detail::json alias;
+      SerializeGltfFileAlias(file.aliases[i], alias);
+      detail::JsonPushBack(aliases, std::move(alias));
+    }
+    detail::JsonAddMember(o, "aliases", std::move(aliases));
+  }
+  if (!file.name.empty()) {
+    SerializeStringProperty("name", file.name, o);
+  }
+  SerializeExtrasAndExtensions(file, o);
+}
+
+static void SerializeGltfExternalAsset(const ExternalAsset &asset,
+                                       detail::json &o) {
+  if (asset.file != -1) {
+    SerializeNumberProperty<int>("file", asset.file, o);
+  }
+  if (!asset.name.empty()) {
+    SerializeStringProperty("name", asset.name, o);
+  }
+  SerializeExtrasAndExtensions(asset, o);
+}
+
 ///
 /// Serialize all properties except buffers and images.
 ///
@@ -8405,6 +8636,30 @@ static void SerializeGltfModel(const Model *model, detail::json &o) {
       detail::JsonPushBack(scenes, std::move(currentScene));
     }
     detail::JsonAddMember(o, "scenes", std::move(scenes));
+  }
+
+  // FILES (glTF 2.1)
+  if (model->files.size()) {
+    detail::json files;
+    detail::JsonReserveArray(files, model->files.size());
+    for (unsigned int i = 0; i < model->files.size(); ++i) {
+      detail::json file;
+      SerializeGltfFile(model->files[i], file);
+      detail::JsonPushBack(files, std::move(file));
+    }
+    detail::JsonAddMember(o, "files", std::move(files));
+  }
+
+  // EXTERNAL ASSETS (glTF 2.1)
+  if (model->externalAssets.size()) {
+    detail::json externalAssets;
+    detail::JsonReserveArray(externalAssets, model->externalAssets.size());
+    for (unsigned int i = 0; i < model->externalAssets.size(); ++i) {
+      detail::json asset;
+      SerializeGltfExternalAsset(model->externalAssets[i], asset);
+      detail::JsonPushBack(externalAssets, std::move(asset));
+    }
+    detail::JsonAddMember(o, "externalAssets", std::move(externalAssets));
   }
 
   // SKINS
