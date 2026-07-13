@@ -97,6 +97,11 @@ namespace tinygltf {
           // integer:
           // https://github.com/KhronosGroup/glTF/blob/b9884a2fd45130b4d673dd6c8a706ee21ee5c5f7/specification/2.0/schema/accessor.schema.json#L22
 
+// glTF 2.1 - additional accessor component type definitions.
+#define TINYGLTF_COMPONENT_TYPE_HALF_FLOAT (5131)
+#define TINYGLTF_COMPONENT_TYPE_INT64 (5134)
+#define TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT64 (5135)
+
 #define TINYGLTF_TEXTURE_FILTER_NEAREST (9728)
 #define TINYGLTF_TEXTURE_FILTER_LINEAR (9729)
 #define TINYGLTF_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST (9984)
@@ -213,6 +218,12 @@ static inline int32_t GetComponentSizeInBytes(uint32_t componentType) {
   } else if (componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
     return 4;
   } else if (componentType == TINYGLTF_COMPONENT_TYPE_DOUBLE) {
+    return 8;
+  } else if (componentType == TINYGLTF_COMPONENT_TYPE_HALF_FLOAT) {
+    return 2;
+  } else if (componentType == TINYGLTF_COMPONENT_TYPE_INT64) {
+    return 8;
+  } else if (componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT64) {
     return 8;
   } else {
     // Unknown component type
@@ -565,6 +576,7 @@ struct AnimationSampler {
 
 struct Animation {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   std::vector<AnimationChannel> channels;
   std::vector<AnimationSampler> samplers;
   Value extras;
@@ -581,6 +593,7 @@ struct Animation {
 
 struct Skin {
   std::string name;
+  std::string uid;              // glTF 2.1 unique ID (child-of-root)
   int inverseBindMatrices{-1};  // required here but not in the spec
   int skeleton{-1};             // The index of the node used as a skeleton root
   std::vector<int> joints;      // Indices of skeleton nodes
@@ -599,6 +612,7 @@ struct Skin {
 
 struct Sampler {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   // glTF 2.0 spec does not define default value for `minFilter` and
   // `magFilter`. Set -1 in TinyGLTF(issue #186)
   int minFilter =
@@ -630,6 +644,7 @@ struct Sampler {
 
 struct Image {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   int width{-1};
   int height{-1};
   int component{-1};
@@ -663,6 +678,7 @@ struct Image {
 
 struct Texture {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
 
   int sampler{-1};
   int source{-1};
@@ -761,6 +777,7 @@ struct PbrMetallicRoughness {
 // to keep a single material model
 struct Material {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
 
   std::vector<double> emissiveFactor{0.0, 0.0, 0.0};  // length 3. default [0, 0, 0]
   std::string alphaMode{"OPAQUE"}; // default "OPAQUE"
@@ -945,6 +962,7 @@ struct OrthographicCamera {
 struct Camera {
   std::string type;  // required. "perspective" or "orthographic"
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
 
   PerspectiveCamera perspective;
   OrthographicCamera orthographic;
@@ -988,6 +1006,7 @@ struct Primitive {
 
 struct Mesh {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   std::vector<Primitive> primitives;
   std::vector<double> weights;  // weights to be applied to the Morph Targets
   ExtensionMap extensions;
@@ -1002,6 +1021,27 @@ struct Mesh {
   bool operator==(const Mesh &) const;
 };
 
+// glTF 2.1 - a node bounding volume: an implicit shape (index into Model::shapes), optionally
+// transformed, that encloses the node's content. Node hierarchies of these form a bounding volume
+// hierarchy (BVH). Considered present on a node when `shape != -1`.
+struct BoundingVolume {
+  int shape{-1};                    // index into Model::shapes (required when present)
+  std::vector<double> matrix;       // length 0 or 16
+  std::vector<double> translation;  // length 0 or 3
+  std::vector<double> rotation;     // length 0 or 4
+  std::vector<double> scale;        // length 0 or 3
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  BoundingVolume() = default;
+  DEFAULT_METHODS(BoundingVolume)
+};
+
 class Node {
  public:
   Node() = default;
@@ -1013,11 +1053,13 @@ class Node {
   int camera{-1};  // the index of the camera referenced by this node
 
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   int skin{-1};
   int mesh{-1};
   int light{-1};    // light source index (KHR_lights_punctual)
   int emitter{-1};  // audio emitter index (KHR_audio)
   int externalAsset{-1};  // external asset index (glTF 2.1 external assets)
+  BoundingVolume boundingVolume;  // glTF 2.1 bounding volume (present when shape != -1)
   std::vector<int> lods; // level of detail nodes (MSFT_lod)
   std::vector<int> children;
   std::vector<double> rotation;     // length must be 0 or 4
@@ -1058,6 +1100,7 @@ struct Asset {
   std::string generator;
   std::string minVersion;
   std::string copyright;
+  int thumbnail{-1};  // glTF 2.1 - index into Model::images for a preview thumbnail
   ExtensionMap extensions;
   Value extras;
 
@@ -1072,6 +1115,7 @@ struct Asset {
 
 struct Scene {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   std::vector<int> nodes;
   std::vector<int> audioEmitters;  // KHR_audio global emitters
 
@@ -1144,6 +1188,90 @@ struct ExternalAsset {
   DEFAULT_METHODS(ExternalAsset)
 };
 
+// glTF 2.1 - implicit shape parameter blocks, selected by Shape::type.
+struct BoxShape {
+  std::vector<double> size;  // [x, y, z]; default [1, 1, 1]
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  BoxShape() = default;
+  DEFAULT_METHODS(BoxShape)
+};
+
+struct SphereShape {
+  double radius{0.5};
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  SphereShape() = default;
+  DEFAULT_METHODS(SphereShape)
+};
+
+struct CapsuleShape {
+  double height{0.5};
+  double radiusBottom{0.25};
+  double radiusTop{0.25};
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  CapsuleShape() = default;
+  DEFAULT_METHODS(CapsuleShape)
+};
+
+struct CylinderShape {
+  double height{0.5};
+  double radiusBottom{0.25};
+  double radiusTop{0.25};
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  CylinderShape() = default;
+  DEFAULT_METHODS(CylinderShape)
+};
+
+// glTF 2.1 - an implicit shape (top-level "shapes" array). `type` selects one of
+// "box" / "sphere" / "capsule" / "cylinder" / "plane"; the matching sub-object holds its
+// parameters ("plane" is an infinite plane and carries none).
+struct Shape {
+  std::string type;  // required. one of the implicit shape types
+  std::string name;
+
+  BoxShape box;
+  SphereShape sphere;
+  CapsuleShape capsule;
+  CylinderShape cylinder;
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  Shape() = default;
+  DEFAULT_METHODS(Shape)
+};
+
 struct SpotLight {
   double innerConeAngle{0.0};
   double outerConeAngle{0.7853981634};
@@ -1162,6 +1290,7 @@ struct SpotLight {
 
 struct Light {
   std::string name;
+  std::string uid;  // glTF 2.1 unique ID (child-of-root)
   std::vector<double> color;
   double intensity{1.0};
   std::string type;
@@ -1289,6 +1418,7 @@ class Model {
   std::vector<AudioSource> audioSources;
   std::vector<File> files;                    // glTF 2.1 unified file references
   std::vector<ExternalAsset> externalAssets;  // glTF 2.1 external assets
+  std::vector<Shape> shapes;                  // glTF 2.1 implicit shapes
 
   int defaultScene{-1};
   std::vector<std::string> extensionsUsed;
@@ -4455,6 +4585,10 @@ static bool ParseAsset(Asset *asset, std::string *err, const detail::json &o,
   ParseStringProperty(&asset->minVersion, err, o, "minVersion", false, "Asset");
   ParseStringProperty(&asset->copyright, err, o, "copyright", false, "Asset");
 
+  int thumbnail = -1;
+  ParseIntegerProperty(&thumbnail, err, o, "thumbnail", false);
+  asset->thumbnail = thumbnail;
+
   ParseExtrasAndExtensions(asset, err, o,
                            store_original_json_for_extras_and_extensions);
   return true;
@@ -4476,6 +4610,7 @@ static bool ParseImage(Image *image, const int image_idx, std::string *err,
   bool hasURI = detail::FindMember(o, "uri", it);
 
   ParseStringProperty(&image->name, err, o, "name", false);
+  ParseStringProperty(&image->uid, err, o, "uid", false);
 
   if (hasBufferView && hasURI) {
     // Should not both defined.
@@ -4625,6 +4760,7 @@ static bool ParseTexture(Texture *texture, std::string *err,
                            store_original_json_for_extras_and_extensions);
 
   ParseStringProperty(&texture->name, err, o, "name", false);
+  ParseStringProperty(&texture->uid, err, o, "uid", false);
 
   return true;
 }
@@ -5331,6 +5467,7 @@ static bool ParseMesh(Mesh *mesh, Model *model,
                       bool store_original_json_for_extras_and_extensions,
                       ParseStrictness strictness) {
   ParseStringProperty(&mesh->name, err, o, "name", false);
+  ParseStringProperty(&mesh->uid, err, o, "uid", false);
 
   mesh->primitives.clear();
   detail::json_const_iterator primObject;
@@ -5360,9 +5497,27 @@ static bool ParseMesh(Mesh *mesh, Model *model,
   return true;
 }
 
+static bool ParseBoundingVolume(
+    BoundingVolume *bv, std::string *err, const detail::json &o,
+    bool store_original_json_for_extras_and_extensions) {
+  int shape = -1;
+  ParseIntegerProperty(&shape, err, o, "shape", true);
+  bv->shape = shape;
+
+  ParseNumberArrayProperty(&bv->matrix, err, o, "matrix", false);
+  ParseNumberArrayProperty(&bv->translation, err, o, "translation", false);
+  ParseNumberArrayProperty(&bv->rotation, err, o, "rotation", false);
+  ParseNumberArrayProperty(&bv->scale, err, o, "scale", false);
+
+  ParseExtrasAndExtensions(bv, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
 static bool ParseNode(Node *node, std::string *err, const detail::json &o,
                       bool store_original_json_for_extras_and_extensions) {
   ParseStringProperty(&node->name, err, o, "name", false);
+  ParseStringProperty(&node->uid, err, o, "uid", false);
 
   int skin = -1;
   ParseIntegerProperty(&skin, err, o, "skin", false);
@@ -5386,6 +5541,18 @@ static bool ParseNode(Node *node, std::string *err, const detail::json &o,
   int externalAsset = -1;
   ParseIntegerProperty(&externalAsset, err, o, "externalAsset", false);
   node->externalAsset = externalAsset;
+
+  {
+    detail::json_const_iterator bvIt;
+    if (detail::FindMember(o, "boundingVolume", bvIt) &&
+        detail::IsObject(detail::GetValue(bvIt))) {
+      if (!ParseBoundingVolume(&node->boundingVolume, err,
+                               detail::GetValue(bvIt),
+                               store_original_json_for_extras_and_extensions)) {
+        return false;
+      }
+    }
+  }
 
   node->children.clear();
   ParseIntegerArrayProperty(&node->children, err, o, "children", false);
@@ -5453,6 +5620,7 @@ static bool ParseNode(Node *node, std::string *err, const detail::json &o,
 static bool ParseScene(Scene *scene, std::string *err, const detail::json &o,
                        bool store_original_json_for_extras_and_extensions) {
   ParseStringProperty(&scene->name, err, o, "name", false);
+  ParseStringProperty(&scene->uid, err, o, "uid", false);
   ParseIntegerArrayProperty(&scene->nodes, err, o, "nodes", false);
 
   ParseExtrasAndExtensions(scene, err, o,
@@ -5547,6 +5715,89 @@ static bool ParseExternalAsset(
   return true;
 }
 
+static bool ParseBoxShape(BoxShape *shape, std::string *err,
+                          const detail::json &o,
+                          bool store_original_json_for_extras_and_extensions) {
+  ParseNumberArrayProperty(&shape->size, err, o, "size", false);
+  ParseExtrasAndExtensions(shape, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
+static bool ParseSphereShape(
+    SphereShape *shape, std::string *err, const detail::json &o,
+    bool store_original_json_for_extras_and_extensions) {
+  ParseNumberProperty(&shape->radius, err, o, "radius", false);
+  ParseExtrasAndExtensions(shape, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
+static bool ParseCapsuleShape(
+    CapsuleShape *shape, std::string *err, const detail::json &o,
+    bool store_original_json_for_extras_and_extensions) {
+  ParseNumberProperty(&shape->height, err, o, "height", false);
+  ParseNumberProperty(&shape->radiusBottom, err, o, "radiusBottom", false);
+  ParseNumberProperty(&shape->radiusTop, err, o, "radiusTop", false);
+  ParseExtrasAndExtensions(shape, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
+static bool ParseCylinderShape(
+    CylinderShape *shape, std::string *err, const detail::json &o,
+    bool store_original_json_for_extras_and_extensions) {
+  ParseNumberProperty(&shape->height, err, o, "height", false);
+  ParseNumberProperty(&shape->radiusBottom, err, o, "radiusBottom", false);
+  ParseNumberProperty(&shape->radiusTop, err, o, "radiusTop", false);
+  ParseExtrasAndExtensions(shape, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
+static bool ParseShape(Shape *shape, std::string *err, const detail::json &o,
+                       bool store_original_json_for_extras_and_extensions) {
+  if (!ParseStringProperty(&shape->type, err, o, "type", true, "Shape")) {
+    return false;
+  }
+  ParseStringProperty(&shape->name, err, o, "name", false);
+
+  detail::json_const_iterator subIt;
+  if (shape->type.compare("box") == 0 && detail::FindMember(o, "box", subIt) &&
+      detail::IsObject(detail::GetValue(subIt))) {
+    if (!ParseBoxShape(&shape->box, err, detail::GetValue(subIt),
+                       store_original_json_for_extras_and_extensions)) {
+      return false;
+    }
+  } else if (shape->type.compare("sphere") == 0 &&
+             detail::FindMember(o, "sphere", subIt) &&
+             detail::IsObject(detail::GetValue(subIt))) {
+    if (!ParseSphereShape(&shape->sphere, err, detail::GetValue(subIt),
+                          store_original_json_for_extras_and_extensions)) {
+      return false;
+    }
+  } else if (shape->type.compare("capsule") == 0 &&
+             detail::FindMember(o, "capsule", subIt) &&
+             detail::IsObject(detail::GetValue(subIt))) {
+    if (!ParseCapsuleShape(&shape->capsule, err, detail::GetValue(subIt),
+                           store_original_json_for_extras_and_extensions)) {
+      return false;
+    }
+  } else if (shape->type.compare("cylinder") == 0 &&
+             detail::FindMember(o, "cylinder", subIt) &&
+             detail::IsObject(detail::GetValue(subIt))) {
+    if (!ParseCylinderShape(&shape->cylinder, err, detail::GetValue(subIt),
+                            store_original_json_for_extras_and_extensions)) {
+      return false;
+    }
+  }
+  // "plane" carries no parameters.
+
+  ParseExtrasAndExtensions(shape, err, o,
+                           store_original_json_for_extras_and_extensions);
+  return true;
+}
+
 static bool ParsePbrMetallicRoughness(
     PbrMetallicRoughness *pbr, std::string *err, const detail::json &o,
     bool store_original_json_for_extras_and_extensions) {
@@ -5600,6 +5851,7 @@ static bool ParseMaterial(Material *material, std::string *err, std::string *war
                           bool store_original_json_for_extras_and_extensions,
                           ParseStrictness strictness) {
   ParseStringProperty(&material->name, err, o, "name", /* required */ false);
+  ParseStringProperty(&material->uid, err, o, "uid", false);
 
   if (ParseNumberArrayProperty(&material->emissiveFactor, err, o,
                                "emissiveFactor",
@@ -5854,6 +6106,7 @@ static bool ParseAnimation(Animation *animation, std::string *err,
   }
 
   ParseStringProperty(&animation->name, err, o, "name", false);
+  ParseStringProperty(&animation->uid, err, o, "uid", false);
 
   ParseExtrasAndExtensions(animation, err, o,
                            store_original_json_for_extras_and_extensions);
@@ -5865,6 +6118,7 @@ static bool ParseSampler(Sampler *sampler, std::string *err,
                          const detail::json &o,
                          bool store_original_json_for_extras_and_extensions) {
   ParseStringProperty(&sampler->name, err, o, "name", false);
+  ParseStringProperty(&sampler->uid, err, o, "uid", false);
 
   int minFilter = -1;
   int magFilter = -1;
@@ -5896,6 +6150,7 @@ static bool ParseSampler(Sampler *sampler, std::string *err,
 static bool ParseSkin(Skin *skin, std::string *err, const detail::json &o,
                       bool store_original_json_for_extras_and_extensions) {
   ParseStringProperty(&skin->name, err, o, "name", false, "Skin");
+  ParseStringProperty(&skin->uid, err, o, "uid", false);
 
   std::vector<int> joints;
   if (!ParseIntegerArrayProperty(&joints, err, o, "joints", false, "Skin")) {
@@ -6071,6 +6326,7 @@ static bool ParseCamera(Camera *camera, std::string *err, const detail::json &o,
   }
 
   ParseStringProperty(&camera->name, err, o, "name", false);
+  ParseStringProperty(&camera->uid, err, o, "uid", false);
 
   ParseExtrasAndExtensions(camera, err, o,
                            store_original_json_for_extras_and_extensions);
@@ -6112,6 +6368,7 @@ static bool ParseLight(Light *light, std::string *err, const detail::json &o,
   }
 
   ParseStringProperty(&light->name, err, o, "name", false);
+  ParseStringProperty(&light->uid, err, o, "uid", false);
   ParseNumberArrayProperty(&light->color, err, o, "color", false);
   ParseNumberProperty(&light->range, err, o, "range", false);
   ParseNumberProperty(&light->intensity, err, o, "intensity", false);
@@ -6644,6 +6901,30 @@ bool TinyGLTF::LoadFromString(Model *model, std::string *err, std::string *warn,
           model->externalAssets.emplace_back(std::move(asset));
           return true;
         });
+
+    if (!success) {
+      return false;
+    }
+  }
+
+  // 8d. Parse shapes (glTF 2.1).
+  {
+    bool success = ForEachInArray(v, "shapes", [&](const detail::json &o) {
+      if (!detail::IsObject(o)) {
+        if (err) {
+          (*err) += "`shapes' does not contain an JSON object.";
+        }
+        return false;
+      }
+      Shape shape;
+      if (!ParseShape(&shape, err, o,
+                      store_original_json_for_extras_and_extensions_)) {
+        return false;
+      }
+
+      model->shapes.emplace_back(std::move(shape));
+      return true;
+    });
 
     if (!success) {
       return false;
@@ -7770,6 +8051,9 @@ static void SerializeGltfAnimation(const Animation &animation,
     detail::JsonAddMember(o, "samplers", std::move(samplers));
   }
 
+  if (!animation.uid.empty()) {
+    SerializeStringProperty("uid", animation.uid, o);
+  }
   SerializeExtrasAndExtensions(animation, o);
 }
 
@@ -7791,6 +8075,10 @@ static void SerializeGltfAsset(const Asset &asset, detail::json &o) {
 
   // TODO(syoyo): Do we need to check if `version` is greater or equal to 2.0?
   SerializeStringProperty("version", version, o);
+
+  if (asset.thumbnail != -1) {
+    SerializeNumberProperty<int>("thumbnail", asset.thumbnail, o);
+  }
 
   SerializeExtrasAndExtensions(asset, o);
 }
@@ -7867,6 +8155,9 @@ static void SerializeGltfImage(const Image &image, const std::string &uri,
     SerializeStringProperty("name", image.name, o);
   }
 
+  if (!image.uid.empty()) {
+    SerializeStringProperty("uid", image.uid, o);
+  }
   SerializeExtrasAndExtensions(image, o);
 }
 
@@ -8010,6 +8301,9 @@ static void SerializeGltfMaterial(const Material &material, detail::json &o) {
   SerializeParameterMap(material.additionalValues, o);
 #endif
 
+  if (!material.uid.empty()) {
+    SerializeStringProperty("uid", material.uid, o);
+  }
   SerializeExtrasAndExtensions(material, o);
 
   // MSFT_lod
@@ -8103,6 +8397,9 @@ static void SerializeGltfMesh(const Mesh &mesh, detail::json &o) {
     SerializeStringProperty("name", mesh.name, o);
   }
 
+  if (!mesh.uid.empty()) {
+    SerializeStringProperty("uid", mesh.uid, o);
+  }
   SerializeExtrasAndExtensions(mesh, o);
 }
 
@@ -8124,6 +8421,9 @@ static void SerializeGltfLight(const Light &light, detail::json &o) {
     detail::json spot;
     SerializeSpotLight(light.spot, spot);
     detail::JsonAddMember(o, "spot", std::move(spot));
+  }
+  if (!light.uid.empty()) {
+    SerializeStringProperty("uid", light.uid, o);
   }
   SerializeExtrasAndExtensions(light, o);
 }
@@ -8182,6 +8482,24 @@ static void SerializeGltfAudioSource(const AudioSource &source,
   SerializeExtrasAndExtensions(source, o);
 }
 
+static void SerializeGltfBoundingVolume(const BoundingVolume &bv,
+                                        detail::json &o) {
+  SerializeNumberProperty<int>("shape", bv.shape, o);
+  if (bv.matrix.size() == 16) {
+    SerializeNumberArrayProperty<double>("matrix", bv.matrix, o);
+  }
+  if (bv.translation.size() == 3) {
+    SerializeNumberArrayProperty<double>("translation", bv.translation, o);
+  }
+  if (bv.rotation.size() == 4) {
+    SerializeNumberArrayProperty<double>("rotation", bv.rotation, o);
+  }
+  if (bv.scale.size() == 3) {
+    SerializeNumberArrayProperty<double>("scale", bv.scale, o);
+  }
+  SerializeExtrasAndExtensions(bv, o);
+}
+
 static void SerializeGltfNode(const Node &node, detail::json &o) {
   if (node.translation.size() > 0) {
     SerializeNumberArrayProperty<double>("translation", node.translation, o);
@@ -8215,6 +8533,15 @@ static void SerializeGltfNode(const Node &node, detail::json &o) {
     SerializeNumberProperty<int>("externalAsset", node.externalAsset, o);
   }
 
+  if (node.boundingVolume.shape != -1) {
+    detail::json boundingVolume;
+    SerializeGltfBoundingVolume(node.boundingVolume, boundingVolume);
+    detail::JsonAddMember(o, "boundingVolume", std::move(boundingVolume));
+  }
+
+  if (!node.uid.empty()) {
+    SerializeStringProperty("uid", node.uid, o);
+  }
   SerializeExtrasAndExtensions(node, o);
 
   // Note(agnat): If the asset was loaded from disk, the node may already
@@ -8324,6 +8651,9 @@ static void SerializeGltfSampler(const Sampler &sampler, detail::json &o) {
   if (!sampler.name.empty()) {
     SerializeStringProperty("name", sampler.name, o);
   }
+  if (!sampler.uid.empty()) {
+    SerializeStringProperty("uid", sampler.uid, o);
+  }
   if (sampler.magFilter != -1) {
     SerializeNumberProperty("magFilter", sampler.magFilter, o);
   }
@@ -8367,6 +8697,9 @@ static void SerializeGltfCamera(const Camera &camera, detail::json &o) {
   if (!camera.name.empty()) {
     SerializeStringProperty("name", camera.name, o);
   }
+  if (!camera.uid.empty()) {
+    SerializeStringProperty("uid", camera.uid, o);
+  }
 
   if (camera.type.compare("orthographic") == 0) {
     detail::json orthographic;
@@ -8388,6 +8721,9 @@ static void SerializeGltfScene(const Scene &scene, detail::json &o) {
 
   if (scene.name.size()) {
     SerializeStringProperty("name", scene.name, o);
+  }
+  if (!scene.uid.empty()) {
+    SerializeStringProperty("uid", scene.uid, o);
   }
   SerializeExtrasAndExtensions(scene, o);
 
@@ -8440,6 +8776,9 @@ static void SerializeGltfSkin(const Skin &skin, detail::json &o) {
     SerializeStringProperty("name", skin.name, o);
   }
 
+  if (!skin.uid.empty()) {
+    SerializeStringProperty("uid", skin.uid, o);
+  }
   SerializeExtrasAndExtensions(skin, o);
 }
 
@@ -8452,6 +8791,9 @@ static void SerializeGltfTexture(const Texture &texture, detail::json &o) {
   }
   if (texture.name.size()) {
     SerializeStringProperty("name", texture.name, o);
+  }
+  if (!texture.uid.empty()) {
+    SerializeStringProperty("uid", texture.uid, o);
   }
   SerializeExtrasAndExtensions(texture, o);
 }
@@ -8500,6 +8842,62 @@ static void SerializeGltfExternalAsset(const ExternalAsset &asset,
     SerializeStringProperty("name", asset.name, o);
   }
   SerializeExtrasAndExtensions(asset, o);
+}
+
+static void SerializeGltfBoxShape(const BoxShape &shape, detail::json &o) {
+  if (!shape.size.empty()) {
+    SerializeNumberArrayProperty<double>("size", shape.size, o);
+  }
+  SerializeExtrasAndExtensions(shape, o);
+}
+
+static void SerializeGltfSphereShape(const SphereShape &shape, detail::json &o) {
+  SerializeNumberProperty("radius", shape.radius, o);
+  SerializeExtrasAndExtensions(shape, o);
+}
+
+static void SerializeGltfCapsuleShape(const CapsuleShape &shape,
+                                      detail::json &o) {
+  SerializeNumberProperty("height", shape.height, o);
+  SerializeNumberProperty("radiusBottom", shape.radiusBottom, o);
+  SerializeNumberProperty("radiusTop", shape.radiusTop, o);
+  SerializeExtrasAndExtensions(shape, o);
+}
+
+static void SerializeGltfCylinderShape(const CylinderShape &shape,
+                                       detail::json &o) {
+  SerializeNumberProperty("height", shape.height, o);
+  SerializeNumberProperty("radiusBottom", shape.radiusBottom, o);
+  SerializeNumberProperty("radiusTop", shape.radiusTop, o);
+  SerializeExtrasAndExtensions(shape, o);
+}
+
+static void SerializeGltfShape(const Shape &shape, detail::json &o) {
+  SerializeStringProperty("type", shape.type, o);
+  if (!shape.name.empty()) {
+    SerializeStringProperty("name", shape.name, o);
+  }
+
+  if (shape.type.compare("box") == 0) {
+    detail::json box;
+    SerializeGltfBoxShape(shape.box, box);
+    detail::JsonAddMember(o, "box", std::move(box));
+  } else if (shape.type.compare("sphere") == 0) {
+    detail::json sphere;
+    SerializeGltfSphereShape(shape.sphere, sphere);
+    detail::JsonAddMember(o, "sphere", std::move(sphere));
+  } else if (shape.type.compare("capsule") == 0) {
+    detail::json capsule;
+    SerializeGltfCapsuleShape(shape.capsule, capsule);
+    detail::JsonAddMember(o, "capsule", std::move(capsule));
+  } else if (shape.type.compare("cylinder") == 0) {
+    detail::json cylinder;
+    SerializeGltfCylinderShape(shape.cylinder, cylinder);
+    detail::JsonAddMember(o, "cylinder", std::move(cylinder));
+  }
+  // "plane" carries no parameters.
+
+  SerializeExtrasAndExtensions(shape, o);
 }
 
 ///
@@ -8660,6 +9058,18 @@ static void SerializeGltfModel(const Model *model, detail::json &o) {
       detail::JsonPushBack(externalAssets, std::move(asset));
     }
     detail::JsonAddMember(o, "externalAssets", std::move(externalAssets));
+  }
+
+  // SHAPES (glTF 2.1)
+  if (model->shapes.size()) {
+    detail::json shapes;
+    detail::JsonReserveArray(shapes, model->shapes.size());
+    for (unsigned int i = 0; i < model->shapes.size(); ++i) {
+      detail::json shape;
+      SerializeGltfShape(model->shapes[i], shape);
+      detail::JsonPushBack(shapes, std::move(shape));
+    }
+    detail::JsonAddMember(o, "shapes", std::move(shapes));
   }
 
   // SKINS
