@@ -50,7 +50,7 @@ static void fuzz_binary(const uint8_t *data, size_t size) {
   std::string warn;
 
   bool ret = ctx.LoadBinaryFromMemory(&model, &err, &warn, data,
-                                      static_cast<unsigned int>(size),
+                                      size,
                                       /* base_dir */ "");
   (void)ret;
 }

@@ -1644,7 +1644,7 @@ class TinyGLTF {
   ///
   bool LoadBinaryFromMemory(Model *model, std::string *err, std::string *warn,
                             const unsigned char *bytes,
-                            const unsigned int length,
+                            const size_t length,
                             const std::string &base_dir = "",
                             unsigned int check_sections = REQUIRE_VERSION);
 
@@ -1652,14 +1652,18 @@ class TinyGLTF {
   /// Write glTF to stream, buffers and images will be embedded
   ///
   bool WriteGltfSceneToStream(const Model *model, std::ostream &stream,
-                              bool prettyPrint, bool writeBinary);
+                              bool prettyPrint = true, bool writeBinary = false,
+                              bool writeBinaryV3 = false);
 
   ///
   /// Write glTF to file.
   ///
+  /// When `writeBinary` is true, `writeBinaryV3` selects glTF 2.1 GLB binary
+  /// version 3 (64-bit lengths). Defaults to version 2 for compatibility.
   bool WriteGltfSceneToFile(const Model *model, const std::string &filename,
-                            bool embedImages, bool embedBuffers,
-                            bool prettyPrint, bool writeBinary);
+                            bool embedImages = false, bool embedBuffers = false,
+                            bool prettyPrint = true, bool writeBinary = false,
+                            bool writeBinaryV3 = false);
 
   ///
   /// Sets the parsing strictness.
@@ -2414,6 +2418,26 @@ static void swap4(unsigned int *val) {
   dst[1] = src[2];
   dst[2] = src[1];
   dst[3] = src[0];
+#endif
+}
+
+// glTF 2.1 GLB binary version 3 uses 64-bit length fields.
+static void swap8(uint64_t *val) {
+#ifdef TINYGLTF_LITTLE_ENDIAN
+  (void)val;
+#else
+  uint64_t tmp = *val;
+  unsigned char *dst = reinterpret_cast<unsigned char *>(val);
+  unsigned char *src = reinterpret_cast<unsigned char *>(&tmp);
+
+  dst[0] = src[7];
+  dst[1] = src[6];
+  dst[2] = src[5];
+  dst[3] = src[4];
+  dst[4] = src[3];
+  dst[5] = src[2];
+  dst[6] = src[1];
+  dst[7] = src[0];
 #endif
 }
 
@@ -7325,7 +7349,7 @@ bool TinyGLTF::LoadASCIIFromFile(Model *model, std::string *err,
 bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
                                     std::string *warn,
                                     const unsigned char *bytes,
-                                    unsigned int size,
+                                    size_t size,
                                     const std::string &base_dir,
                                     unsigned int check_sections) {
   if (size < 20) {
@@ -7345,19 +7369,53 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
     return false;
   }
 
-  unsigned int version;        // 4 bytes
-  unsigned int length;         // 4 bytes
-  unsigned int chunk0_length;  // 4 bytes
-  unsigned int chunk0_format;  // 4 bytes;
-
+  unsigned int version = 0;  // 4 bytes
   memcpy(&version, bytes + 4, 4);
   swap4(&version);
-  memcpy(&length, bytes + 8, 4); // Total glb size, including header and all chunks.
-  swap4(&length);
-  memcpy(&chunk0_length, bytes + 12, 4);  // JSON data length
-  swap4(&chunk0_length);
-  memcpy(&chunk0_format, bytes + 16, 4);
-  swap4(&chunk0_format);
+
+  // glTF 2.1 introduces GLB binary version 3, which uses 64-bit length fields and adds a reserved
+  // chunk-encoding field (always 0 in glTF 2.1) to each chunk header. Version 2 keeps 32-bit
+  // lengths. Importers must support both. Layouts:
+  //   v2: header = magic(4) + version(4) + length(4)               = 12 bytes
+  //       chunk  = chunkLength(4) + chunkType(4)                    = 8 bytes
+  //   v3: header = magic(4) + version(4) + length(8)                = 16 bytes
+  //       chunk  = chunkLength(8) + chunkType(4) + chunkEncoding(4) = 16 bytes
+  const bool     isV3 = (version == 3);
+  const uint64_t headerSize = isV3 ? 16ull : 12ull;
+  const uint64_t chunkHeaderSize = isV3 ? 16ull : 8ull;
+
+  if (uint64_t(size) < headerSize + chunkHeaderSize) {
+    if (err) {
+      (*err) = "Too short data size for glTF Binary.";
+    }
+    return false;
+  }
+
+  uint64_t     length = 0;         // Total glb size, including header and all chunks.
+  uint64_t     chunk0_length = 0;  // JSON data length
+  unsigned int chunk0_format = 0;
+  if (isV3) {
+    memcpy(&length, bytes + 8, 8);
+    swap8(&length);
+    memcpy(&chunk0_length, bytes + headerSize, 8);
+    swap8(&chunk0_length);
+    memcpy(&chunk0_format, bytes + headerSize + 8, 4);
+    swap4(&chunk0_format);
+    // bytes[headerSize + 12 .. +16) is the reserved chunk-encoding field (0 in glTF 2.1).
+  } else {
+    unsigned int length32 = 0;
+    unsigned int chunk0_length32 = 0;
+    memcpy(&length32, bytes + 8, 4);
+    swap4(&length32);
+    memcpy(&chunk0_length32, bytes + headerSize, 4);
+    swap4(&chunk0_length32);
+    memcpy(&chunk0_format, bytes + headerSize + 4, 4);
+    swap4(&chunk0_format);
+    length = length32;
+    chunk0_length = chunk0_length32;
+  }
+
+  const uint64_t json_start = headerSize + chunkHeaderSize;
 
   // https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#binary-gltf-layout
   //
@@ -7367,10 +7425,18 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
   //
   // https://github.com/syoyo/tinygltf/issues/372
   // Use 64bit uint to avoid integer overflow.
-  uint64_t header_and_json_size = 20ull + uint64_t(chunk0_length);
+  uint64_t header_and_json_size = json_start + chunk0_length;
 
-  if (header_and_json_size > (std::numeric_limits<uint32_t>::max)()) {
-    // Do not allow 4GB or more GLB data.
+  if (isV3) {
+    // glTF 2.1: the most significant bit of every length must be zero (safe as signed 64-bit).
+    if (((length >> 63) != 0) || ((chunk0_length >> 63) != 0)) {
+      if (err) {
+        (*err) = "Invalid glTF binary. GLB v3 length exceeds the 63-bit maximum.";
+      }
+      return false;
+    }
+  } else if (header_and_json_size > (std::numeric_limits<uint32_t>::max)()) {
+    // glTF 2.0 GLB (version 2) does not allow 4GB or more GLB data.
     if (err) {
       (*err) = "Invalid glTF binary. GLB data exceeds 4GB.";
     }
@@ -7414,24 +7480,30 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
     // So there is a situation that Chunk1(BIN) is composed of zero-sized BIN data
     // (chunksize(0) + binformat(BIN) = 8bytes).
     //
-    if ((header_and_json_size + 8ull) > uint64_t(length)) {
+    if ((header_and_json_size + chunkHeaderSize) > uint64_t(length)) {
       if (err) {
         (*err) =
-            "Insufficient storage space for Chunk1(BIN data). At least Chunk1 "
-            "Must have 8 or more bytes, but got " +
-            std::to_string((header_and_json_size + 8ull) - uint64_t(length)) +
-            ".\n";
+            "Insufficient storage space for Chunk1(BIN data). At least a full "
+            "Chunk1 header must be present.\n";
       }
       return false;
     }
 
-    unsigned int chunk1_length{0};  // 4 bytes
-    unsigned int chunk1_format{0};  // 4 bytes;
-    memcpy(&chunk1_length, bytes + header_and_json_size,
-           4);  // Bin data length
-    swap4(&chunk1_length);
-    memcpy(&chunk1_format, bytes + header_and_json_size + 4, 4);
-    swap4(&chunk1_format);
+    uint64_t     chunk1_length = 0;  // Bin data length
+    unsigned int chunk1_format = 0;
+    if (isV3) {
+      memcpy(&chunk1_length, bytes + header_and_json_size, 8);
+      swap8(&chunk1_length);
+      memcpy(&chunk1_format, bytes + header_and_json_size + 8, 4);
+      swap4(&chunk1_format);
+    } else {
+      unsigned int chunk1_length32 = 0;
+      memcpy(&chunk1_length32, bytes + header_and_json_size, 4);
+      swap4(&chunk1_length32);
+      memcpy(&chunk1_format, bytes + header_and_json_size + 4, 4);
+      swap4(&chunk1_format);
+      chunk1_length = chunk1_length32;
+    }
 
     if (chunk1_format != 0x004e4942) {
       if (err) {
@@ -7440,22 +7512,17 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
       return false;
     }
 
-    if (chunk1_length == 0) {
-
-      if (header_and_json_size + 8 > uint64_t(length)) {
-        if (err) {
-          (*err) = "BIN Chunk header location exceeds the GLB size.";
-        }
-        return false;
+    if (isV3 && ((chunk1_length >> 63) != 0)) {
+      if (err) {
+        (*err) =
+            "Invalid glTF binary. GLB v3 BIN length exceeds the 63-bit maximum.";
       }
+      return false;
+    }
 
+    if (chunk1_length == 0) {
       bin_data_ = nullptr;
-
     } else {
-
-      // When BIN chunk size is not zero, at least Chunk1 should have 12 bytes(8 bytes(header) + 4 bytes(bin
-      // payload could be 1~3 bytes, but need to be aligned to 4 bytes)
-
       if (chunk1_length < 4) {
         if (err) {
           (*err) = "Insufficient Chunk1(BIN) data size.";
@@ -7464,12 +7531,11 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
       }
 
       if ((chunk1_length % 4) != 0) {
-        if (strictness_==ParseStrictness::Permissive) {
+        if (strictness_ == ParseStrictness::Permissive) {
           if (warn) {
             (*warn) += "BIN Chunk end is not aligned to a 4-byte boundary.\n";
           }
-        }
-        else {
+        } else {
           if (err) {
             (*err) = "BIN Chunk end is not aligned to a 4-byte boundary.";
           }
@@ -7477,16 +7543,15 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
         }
       }
 
-      // +8 chunk1 header size.
-      if (uint64_t(chunk1_length) + header_and_json_size + 8 > uint64_t(length)) {
+      if (chunk1_length + header_and_json_size + chunkHeaderSize >
+          uint64_t(length)) {
         if (err) {
           (*err) = "BIN Chunk data length exceeds the GLB size.";
         }
         return false;
       }
 
-      bin_data_ = bytes + header_and_json_size +
-                  8;  // 4 bytes (bin_buffer_length) + 4 bytes(bin_buffer_format)
+      bin_data_ = bytes + header_and_json_size + chunkHeaderSize;
     }
 
     bin_size_ = size_t(chunk1_length);
@@ -7494,9 +7559,17 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
 
   is_binary_ = true;
 
+  if (chunk0_length > (std::numeric_limits<unsigned int>::max)()) {
+    if (err) {
+      (*err) = "JSON chunk too large to parse.";
+    }
+    return false;
+  }
+
   bool ret = LoadFromString(model, err, warn,
-                            reinterpret_cast<const char *>(&bytes[20]),
-                            chunk0_length, base_dir, check_sections);
+                            reinterpret_cast<const char *>(&bytes[json_start]),
+                            static_cast<unsigned int>(chunk0_length), base_dir,
+                            check_sections);
   if (!ret) {
     return ret;
   }
@@ -7534,7 +7607,7 @@ bool TinyGLTF::LoadBinaryFromFile(Model *model, std::string *err,
   std::string basedir = GetBaseDir(filename);
 
   bool ret = LoadBinaryFromMemory(model, err, warn, &data.at(0),
-                                  static_cast<unsigned int>(data.size()),
+                                  data.size(),
                                   basedir, check_sections);
 
   return ret;
@@ -9273,37 +9346,63 @@ static bool WriteGltfFile(const std::string &output,
 #endif
 }
 
+// Writes a GLB binary stream. When `useV3` is true, emits glTF 2.1 GLB binary version 3 (64-bit
+// length fields + a reserved chunk-encoding field, always 0); otherwise emits version 2. See the
+// version-aware layout documented in TinyGLTF::LoadBinaryFromMemory.
 static bool WriteBinaryGltfStream(std::ostream &stream,
                                   const std::string &content,
-                                  const std::vector<unsigned char> &binBuffer) {
+                                  const std::vector<unsigned char> &binBuffer,
+                                  bool useV3 = false) {
   const std::string header = "glTF";
-  const int version = 2;
+  const uint32_t version = useV3 ? 3u : 2u;
 
-  const uint32_t content_size = uint32_t(content.size());
-  const uint32_t binBuffer_size = uint32_t(binBuffer.size());
+  const uint64_t content_size = uint64_t(content.size());
+  const uint64_t binBuffer_size = uint64_t(binBuffer.size());
   // determine number of padding bytes required to ensure 4 byte alignment
-  const uint32_t content_padding_size =
+  const uint64_t content_padding_size =
       content_size % 4 == 0 ? 0 : 4 - content_size % 4;
-  const uint32_t bin_padding_size =
+  const uint64_t bin_padding_size =
       binBuffer_size % 4 == 0 ? 0 : 4 - binBuffer_size % 4;
 
-  // 12 bytes for header, JSON content length, 8 bytes for JSON chunk info.
-  // Chunk data must be located at 4-byte boundary, which may require padding
-  const uint32_t length =
-      12 + 8 + content_size + content_padding_size +
-      (binBuffer_size ? (8 + binBuffer_size + bin_padding_size) : 0);
+  // v2: 12-byte header + 8-byte chunk headers. v3: 16-byte header + 16-byte chunk headers.
+  const uint64_t headerSize = useV3 ? 16ull : 12ull;
+  const uint64_t chunkHeaderSize = useV3 ? 16ull : 8ull;
+
+  // Chunk data must be located at a 4-byte boundary, which may require padding.
+  const uint64_t length =
+      headerSize + chunkHeaderSize + content_size + content_padding_size +
+      (binBuffer_size ? (chunkHeaderSize + binBuffer_size + bin_padding_size)
+                      : 0);
+
+  const uint32_t chunk_encoding = 0;  // reserved (glTF 2.1); always 0
 
   stream.write(header.c_str(), std::streamsize(header.size()));
   stream.write(reinterpret_cast<const char *>(&version), sizeof(version));
-  stream.write(reinterpret_cast<const char *>(&length), sizeof(length));
+  if (useV3) {
+    const uint64_t length64 = length;
+    stream.write(reinterpret_cast<const char *>(&length64), sizeof(length64));
+  } else {
+    const uint32_t length32 = uint32_t(length);
+    stream.write(reinterpret_cast<const char *>(&length32), sizeof(length32));
+  }
 
   // JSON chunk info, then JSON data
-  const uint32_t model_length = uint32_t(content.size()) + content_padding_size;
+  const uint64_t model_length = content_size + content_padding_size;
   const uint32_t model_format = 0x4E4F534A;
-  stream.write(reinterpret_cast<const char *>(&model_length),
-               sizeof(model_length));
-  stream.write(reinterpret_cast<const char *>(&model_format),
-               sizeof(model_format));
+  if (useV3) {
+    stream.write(reinterpret_cast<const char *>(&model_length),
+                 sizeof(model_length));
+    stream.write(reinterpret_cast<const char *>(&model_format),
+                 sizeof(model_format));
+    stream.write(reinterpret_cast<const char *>(&chunk_encoding),
+                 sizeof(chunk_encoding));
+  } else {
+    const uint32_t model_length32 = uint32_t(model_length);
+    stream.write(reinterpret_cast<const char *>(&model_length32),
+                 sizeof(model_length32));
+    stream.write(reinterpret_cast<const char *>(&model_format),
+                 sizeof(model_format));
+  }
   stream.write(content.c_str(), std::streamsize(content.size()));
 
   // Chunk must be multiplies of 4, so pad with spaces
@@ -9313,12 +9412,22 @@ static bool WriteBinaryGltfStream(std::ostream &stream,
   }
   if (binBuffer.size() > 0) {
     // BIN chunk info, then BIN data
-    const uint32_t bin_length = uint32_t(binBuffer.size()) + bin_padding_size;
+    const uint64_t bin_length = binBuffer_size + bin_padding_size;
     const uint32_t bin_format = 0x004e4942;
-    stream.write(reinterpret_cast<const char *>(&bin_length),
-                 sizeof(bin_length));
-    stream.write(reinterpret_cast<const char *>(&bin_format),
-                 sizeof(bin_format));
+    if (useV3) {
+      stream.write(reinterpret_cast<const char *>(&bin_length),
+                   sizeof(bin_length));
+      stream.write(reinterpret_cast<const char *>(&bin_format),
+                   sizeof(bin_format));
+      stream.write(reinterpret_cast<const char *>(&chunk_encoding),
+                   sizeof(chunk_encoding));
+    } else {
+      const uint32_t bin_length32 = uint32_t(bin_length);
+      stream.write(reinterpret_cast<const char *>(&bin_length32),
+                   sizeof(bin_length32));
+      stream.write(reinterpret_cast<const char *>(&bin_format),
+                   sizeof(bin_format));
+    }
     stream.write(reinterpret_cast<const char *>(binBuffer.data()),
                  std::streamsize(binBuffer.size()));
     // Chunksize must be multiplies of 4, so pad with zeroes
@@ -9336,7 +9445,8 @@ static bool WriteBinaryGltfStream(std::ostream &stream,
 
 static bool WriteBinaryGltfFile(const std::string &output,
                                 const std::string &content,
-                                const std::vector<unsigned char> &binBuffer) {
+                                const std::vector<unsigned char> &binBuffer,
+                                bool useV3 = false) {
 #ifndef TINYGLTF_NO_FS
 #ifdef _WIN32
 #if defined(_MSC_VER)
@@ -9353,15 +9463,15 @@ static bool WriteBinaryGltfFile(const std::string &output,
 #else
   std::ofstream gltfFile(output.c_str(), std::ios::binary);
 #endif
-  return WriteBinaryGltfStream(gltfFile, content, binBuffer);
+  return WriteBinaryGltfStream(gltfFile, content, binBuffer, useV3);
 #else
     return false;
 #endif
 }
 
 bool TinyGLTF::WriteGltfSceneToStream(const Model *model, std::ostream &stream,
-                                      bool prettyPrint = true,
-                                      bool writeBinary = false) {
+                                      bool prettyPrint, bool writeBinary,
+                                      bool writeBinaryV3) {
   detail::JsonDocument output;
 
   /// Serialize all properties except buffers and images.
@@ -9408,8 +9518,8 @@ bool TinyGLTF::WriteGltfSceneToStream(const Model *model, std::ostream &stream,
   }
 
   if (writeBinary) {
-    return WriteBinaryGltfStream(stream, detail::JsonToString(output),
-                                 binBuffer);
+    return WriteBinaryGltfStream(stream, detail::JsonToString(output), binBuffer,
+                                 writeBinaryV3);
   } else {
     return WriteGltfStream(stream,
                            detail::JsonToString(output, prettyPrint ? 2 : -1));
@@ -9418,10 +9528,9 @@ bool TinyGLTF::WriteGltfSceneToStream(const Model *model, std::ostream &stream,
 
 bool TinyGLTF::WriteGltfSceneToFile(const Model *model,
                                     const std::string &filename,
-                                    bool embedImages = false,
-                                    bool embedBuffers = false,
-                                    bool prettyPrint = true,
-                                    bool writeBinary = false) {
+                                    bool embedImages, bool embedBuffers,
+                                    bool prettyPrint, bool writeBinary,
+                                    bool writeBinaryV3) {
   detail::JsonDocument output;
   std::string defaultBinFilename = GetBaseFilename(filename);
   std::string defaultBinFileExt = ".bin";
@@ -9516,8 +9625,8 @@ bool TinyGLTF::WriteGltfSceneToFile(const Model *model,
   }
 
   if (writeBinary) {
-    return WriteBinaryGltfFile(filename, detail::JsonToString(output),
-                               binBuffer);
+    return WriteBinaryGltfFile(filename, detail::JsonToString(output), binBuffer,
+                               writeBinaryV3);
   } else {
     return WriteGltfFile(filename,
                          detail::JsonToString(output, (prettyPrint ? 2 : -1)));
