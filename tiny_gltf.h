@@ -1256,9 +1256,25 @@ struct CylinderShape {
   bool operator==(const CylinderShape &) const;
 };
 
+struct PlaneShape {
+  double sizeX{-1.0};  // extents along X; negative = infinite
+  double sizeZ{-1.0};  // extents along Z; negative = infinite
+
+  ExtensionMap extensions;
+  Value extras;
+
+  // Filled when SetStoreOriginalJSONForExtrasAndExtensions is enabled.
+  std::string extras_json_string;
+  std::string extensions_json_string;
+
+  PlaneShape() = default;
+  DEFAULT_METHODS(PlaneShape)
+  bool operator==(const PlaneShape &) const;
+};
+
 // glTF 2.1 - an implicit shape (top-level "shapes" array). `type` selects one of
 // "box" / "sphere" / "capsule" / "cylinder" / "plane"; the matching sub-object holds its
-// parameters ("plane" is an infinite plane and carries none).
+// parameters.
 struct Shape {
   std::string type;  // required. one of the implicit shape types
   std::string name;
@@ -1267,6 +1283,7 @@ struct Shape {
   SphereShape sphere;
   CapsuleShape capsule;
   CylinderShape cylinder;
+  PlaneShape plane;
 
   ExtensionMap extensions;
   Value extras;
@@ -2347,10 +2364,16 @@ bool CylinderShape::operator==(const CylinderShape &other) const {
          TINYGLTF_DOUBLE_EQUAL(this->radiusTop, other.radiusTop) &&
          this->extensions == other.extensions && this->extras == other.extras;
 }
+bool PlaneShape::operator==(const PlaneShape &other) const {
+  return TINYGLTF_DOUBLE_EQUAL(this->sizeX, other.sizeX) &&
+         TINYGLTF_DOUBLE_EQUAL(this->sizeZ, other.sizeZ) &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
 bool Shape::operator==(const Shape &other) const {
   return this->type == other.type && this->name == other.name &&
          this->box == other.box && this->sphere == other.sphere &&
          this->capsule == other.capsule && this->cylinder == other.cylinder &&
+         this->plane == other.plane &&
          this->extensions == other.extensions && this->extras == other.extras;
 }
 bool Node::operator==(const Node &other) const {
@@ -5876,8 +5899,15 @@ static bool ParseShape(Shape *shape, std::string *err, const detail::json &o,
                             store_original_json_for_extras_and_extensions)) {
       return false;
     }
+  } else if (shape->type.compare("plane") == 0 &&
+             detail::FindMember(o, "plane", subIt) &&
+             detail::IsObject(detail::GetValue(subIt))) {
+    const detail::json &planeObj = detail::GetValue(subIt);
+    ParseNumberProperty(&shape->plane.sizeX, err, planeObj, "sizeX", false);
+    ParseNumberProperty(&shape->plane.sizeZ, err, planeObj, "sizeZ", false);
+    ParseExtrasAndExtensions(&shape->plane, err, planeObj,
+                             store_original_json_for_extras_and_extensions);
   }
-  // "plane" carries no parameters.
 
   ParseExtrasAndExtensions(shape, err, o,
                            store_original_json_for_extras_and_extensions);
@@ -9027,8 +9057,17 @@ static void SerializeGltfShape(const Shape &shape, detail::json &o) {
     detail::json cylinder;
     SerializeGltfCylinderShape(shape.cylinder, cylinder);
     detail::JsonAddMember(o, "cylinder", std::move(cylinder));
+  } else if (shape.type.compare("plane") == 0) {
+    detail::json plane;
+    if (shape.plane.sizeX > 0.0) {
+      SerializeNumberProperty("sizeX", shape.plane.sizeX, plane);
+    }
+    if (shape.plane.sizeZ > 0.0) {
+      SerializeNumberProperty("sizeZ", shape.plane.sizeZ, plane);
+    }
+    SerializeExtrasAndExtensions(shape.plane, plane);
+    detail::JsonAddMember(o, "plane", std::move(plane));
   }
-  // "plane" carries no parameters.
 
   SerializeExtrasAndExtensions(shape, o);
 }
