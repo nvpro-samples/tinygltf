@@ -1026,7 +1026,6 @@ struct Mesh {
 // hierarchy (BVH). Considered present on a node when `shape != -1`.
 struct BoundingVolume {
   int shape{-1};                    // index into Model::shapes (required when present)
-  std::vector<double> matrix;       // length 0 or 16
   std::vector<double> translation;  // length 0 or 3
   std::vector<double> rotation;     // length 0 or 4
   std::vector<double> scale;        // length 0 or 3
@@ -1040,6 +1039,7 @@ struct BoundingVolume {
 
   BoundingVolume() = default;
   DEFAULT_METHODS(BoundingVolume)
+  bool operator==(const BoundingVolume &) const;
 };
 
 class Node {
@@ -1059,7 +1059,7 @@ class Node {
   int light{-1};    // light source index (KHR_lights_punctual)
   int emitter{-1};  // audio emitter index (KHR_audio)
   int externalAsset{-1};  // external asset index (glTF 2.1 external assets)
-  BoundingVolume boundingVolume;  // glTF 2.1 bounding volume (present when shape != -1)
+  BoundingVolume boundingVolume;  // glTF 2.1 bounding volume
   std::vector<int> lods; // level of detail nodes (MSFT_lod)
   std::vector<int> children;
   std::vector<double> rotation;     // length must be 0 or 4
@@ -1148,6 +1148,7 @@ struct FileAlias {
 
   FileAlias() = default;
   DEFAULT_METHODS(FileAlias)
+  bool operator==(const FileAlias &) const;
 };
 
 // glTF 2.1 - a file reference to external file data. The data is either stored
@@ -1169,6 +1170,7 @@ struct File {
 
   File() = default;
   DEFAULT_METHODS(File)
+  bool operator==(const File &) const;
 };
 
 // glTF 2.1 - an external glTF asset (top-level "externalAssets" array),
@@ -1186,6 +1188,7 @@ struct ExternalAsset {
 
   ExternalAsset() = default;
   DEFAULT_METHODS(ExternalAsset)
+  bool operator==(const ExternalAsset &) const;
 };
 
 // glTF 2.1 - implicit shape parameter blocks, selected by Shape::type.
@@ -1201,6 +1204,7 @@ struct BoxShape {
 
   BoxShape() = default;
   DEFAULT_METHODS(BoxShape)
+  bool operator==(const BoxShape &) const;
 };
 
 struct SphereShape {
@@ -1215,12 +1219,13 @@ struct SphereShape {
 
   SphereShape() = default;
   DEFAULT_METHODS(SphereShape)
+  bool operator==(const SphereShape &) const;
 };
 
 struct CapsuleShape {
-  double height{0.5};
-  double radiusBottom{0.25};
-  double radiusTop{0.25};
+  double height{1.0};
+  double radiusBottom{0.5};
+  double radiusTop{0.5};
 
   ExtensionMap extensions;
   Value extras;
@@ -1231,12 +1236,13 @@ struct CapsuleShape {
 
   CapsuleShape() = default;
   DEFAULT_METHODS(CapsuleShape)
+  bool operator==(const CapsuleShape &) const;
 };
 
 struct CylinderShape {
-  double height{0.5};
-  double radiusBottom{0.25};
-  double radiusTop{0.25};
+  double height{2.0};
+  double radiusBottom{0.5};
+  double radiusTop{0.5};
 
   ExtensionMap extensions;
   Value extras;
@@ -1247,6 +1253,7 @@ struct CylinderShape {
 
   CylinderShape() = default;
   DEFAULT_METHODS(CylinderShape)
+  bool operator==(const CylinderShape &) const;
 };
 
 // glTF 2.1 - an implicit shape (top-level "shapes" array). `type` selects one of
@@ -1270,6 +1277,7 @@ struct Shape {
 
   Shape() = default;
   DEFAULT_METHODS(Shape)
+  bool operator==(const Shape &) const;
 };
 
 struct SpotLight {
@@ -1651,6 +1659,8 @@ class TinyGLTF {
   ///
   /// Write glTF to stream, buffers and images will be embedded
   ///
+  /// When `writeBinary` is true, `writeBinaryV3` selects glTF 2.1 GLB binary
+  /// version 3 (64-bit lengths). Defaults to version 2 for compatibility.
   bool WriteGltfSceneToStream(const Model *model, std::ostream &stream,
                               bool prettyPrint = true, bool writeBinary = false,
                               bool writeBinaryV3 = false);
@@ -2289,14 +2299,69 @@ bool Model::operator==(const Model &other) const {
          this->lights == other.lights && this->materials == other.materials &&
          this->meshes == other.meshes && this->nodes == other.nodes &&
          this->samplers == other.samplers && this->scenes == other.scenes &&
-         this->skins == other.skins && this->textures == other.textures;
+         this->skins == other.skins && this->textures == other.textures &&
+         this->files == other.files &&
+         this->externalAssets == other.externalAssets &&
+         this->shapes == other.shapes;
+}
+bool BoundingVolume::operator==(const BoundingVolume &other) const {
+  return this->shape == other.shape &&
+         Equals(this->translation, other.translation) &&
+         Equals(this->rotation, other.rotation) &&
+         Equals(this->scale, other.scale) &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool FileAlias::operator==(const FileAlias &other) const {
+  return this->name == other.name && this->alias == other.alias &&
+         this->file == other.file && this->extensions == other.extensions &&
+         this->extras == other.extras;
+}
+bool File::operator==(const File &other) const {
+  return this->name == other.name && this->uri == other.uri &&
+         this->mimeType == other.mimeType &&
+         this->bufferView == other.bufferView &&
+         this->aliases == other.aliases &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool ExternalAsset::operator==(const ExternalAsset &other) const {
+  return this->name == other.name && this->file == other.file &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool BoxShape::operator==(const BoxShape &other) const {
+  return Equals(this->size, other.size) &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool SphereShape::operator==(const SphereShape &other) const {
+  return TINYGLTF_DOUBLE_EQUAL(this->radius, other.radius) &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool CapsuleShape::operator==(const CapsuleShape &other) const {
+  return TINYGLTF_DOUBLE_EQUAL(this->height, other.height) &&
+         TINYGLTF_DOUBLE_EQUAL(this->radiusBottom, other.radiusBottom) &&
+         TINYGLTF_DOUBLE_EQUAL(this->radiusTop, other.radiusTop) &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool CylinderShape::operator==(const CylinderShape &other) const {
+  return TINYGLTF_DOUBLE_EQUAL(this->height, other.height) &&
+         TINYGLTF_DOUBLE_EQUAL(this->radiusBottom, other.radiusBottom) &&
+         TINYGLTF_DOUBLE_EQUAL(this->radiusTop, other.radiusTop) &&
+         this->extensions == other.extensions && this->extras == other.extras;
+}
+bool Shape::operator==(const Shape &other) const {
+  return this->type == other.type && this->name == other.name &&
+         this->box == other.box && this->sphere == other.sphere &&
+         this->capsule == other.capsule && this->cylinder == other.cylinder &&
+         this->extensions == other.extensions && this->extras == other.extras;
 }
 bool Node::operator==(const Node &other) const {
   return this->camera == other.camera && this->children == other.children &&
          this->extensions == other.extensions && this->extras == other.extras &&
          Equals(this->matrix, other.matrix) && this->mesh == other.mesh &&
          (this->light == other.light) && (this->emitter == other.emitter) &&
-         this->name == other.name && Equals(this->rotation, other.rotation) &&
+         this->name == other.name && this->uid == other.uid &&
+         this->externalAsset == other.externalAsset &&
+         this->boundingVolume == other.boundingVolume &&
+         this->lods == other.lods && Equals(this->rotation, other.rotation) &&
          Equals(this->scale, other.scale) && this->skin == other.skin &&
          Equals(this->translation, other.translation) &&
          Equals(this->weights, other.weights);
@@ -5524,11 +5589,8 @@ static bool ParseMesh(Mesh *mesh, Model *model,
 static bool ParseBoundingVolume(
     BoundingVolume *bv, std::string *err, const detail::json &o,
     bool store_original_json_for_extras_and_extensions) {
-  int shape = -1;
-  ParseIntegerProperty(&shape, err, o, "shape", true);
-  bv->shape = shape;
+  ParseIntegerProperty(&bv->shape, err, o, "shape", true);
 
-  ParseNumberArrayProperty(&bv->matrix, err, o, "matrix", false);
   ParseNumberArrayProperty(&bv->translation, err, o, "translation", false);
   ParseNumberArrayProperty(&bv->rotation, err, o, "rotation", false);
   ParseNumberArrayProperty(&bv->scale, err, o, "scale", false);
@@ -7429,7 +7491,7 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
 
   if (isV3) {
     // glTF 2.1: the most significant bit of every length must be zero (safe as signed 64-bit).
-    if (((length >> 63) != 0) || ((chunk0_length >> 63) != 0)) {
+    if (((length | chunk0_length) >> 63) != 0) {
       if (err) {
         (*err) = "Invalid glTF binary. GLB v3 length exceeds the 63-bit maximum.";
       }
@@ -7543,8 +7605,9 @@ bool TinyGLTF::LoadBinaryFromMemory(Model *model, std::string *err,
         }
       }
 
-      if (chunk1_length + header_and_json_size + chunkHeaderSize >
-          uint64_t(length)) {
+      // Avoid overflow: rewrite chunk1_length + x > length as chunk1_length > length - x.
+      if (chunk1_length >
+          uint64_t(length) - header_and_json_size - chunkHeaderSize) {
         if (err) {
           (*err) = "BIN Chunk data length exceeds the GLB size.";
         }
@@ -8558,9 +8621,6 @@ static void SerializeGltfAudioSource(const AudioSource &source,
 static void SerializeGltfBoundingVolume(const BoundingVolume &bv,
                                         detail::json &o) {
   SerializeNumberProperty<int>("shape", bv.shape, o);
-  if (bv.matrix.size() == 16) {
-    SerializeNumberArrayProperty<double>("matrix", bv.matrix, o);
-  }
   if (bv.translation.size() == 3) {
     SerializeNumberArrayProperty<double>("translation", bv.translation, o);
   }
