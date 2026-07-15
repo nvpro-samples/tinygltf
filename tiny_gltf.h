@@ -5612,7 +5612,10 @@ static bool ParseMesh(Mesh *mesh, Model *model,
 static bool ParseBoundingVolume(
     BoundingVolume *bv, std::string *err, const detail::json &o,
     bool store_original_json_for_extras_and_extensions) {
-  ParseIntegerProperty(&bv->shape, err, o, "shape", true);
+  if (!ParseIntegerProperty(&bv->shape, err, o, "shape", /* required */ true,
+                            "BoundingVolume")) {
+    return false;
+  }
 
   ParseNumberArrayProperty(&bv->translation, err, o, "translation", false);
   ParseNumberArrayProperty(&bv->rotation, err, o, "rotation", false);
