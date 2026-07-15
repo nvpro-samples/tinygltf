@@ -170,22 +170,24 @@ jobs:
   windows-mingw-msys2:
     runs-on: windows-latest
     name: Windows x64 (MinGW MSYS2)
+    env:
+      MSYSTEM: UCRT64
+      CHERE_INVOKING: 1
     defaults:
       run:
-        shell: msys2 {0}
+        shell: 'C:\msys64\usr\bin\bash.exe -leo pipefail {0}'
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
       - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          install: base-devel
-          pacboy: >-
-            cc:p cmake:p ninja:p
-          update: true
-          release: false
+        run: |
+          pacman -Sy --noconfirm
+          pacman -S --needed --noconfirm \
+            base-devel \
+            mingw-w64-ucrt-x86_64-gcc \
+            mingw-w64-ucrt-x86_64-cmake \
+            mingw-w64-ucrt-x86_64-ninja
 
       - name: Build with CMake
         run: |
