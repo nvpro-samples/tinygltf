@@ -9228,9 +9228,9 @@ static void SerializeGltfModel(const Model *model, detail::json &o) {
     detail::json externalAssets;
     detail::JsonReserveArray(externalAssets, model->externalAssets.size());
     for (unsigned int i = 0; i < model->externalAssets.size(); ++i) {
-      detail::json asset;
-      SerializeGltfExternalAsset(model->externalAssets[i], asset);
-      detail::JsonPushBack(externalAssets, std::move(asset));
+      detail::json externalAsset;
+      SerializeGltfExternalAsset(model->externalAssets[i], externalAsset);
+      detail::JsonPushBack(externalAssets, std::move(externalAsset));
     }
     detail::JsonAddMember(o, "externalAssets", std::move(externalAssets));
   }
