@@ -5259,8 +5259,10 @@ static bool ParseAccessor(Accessor *accessor, std::string *err,
   accessor->byteOffset = byteOffset;
   accessor->normalized = normalized;
   {
-    if (componentType >= TINYGLTF_COMPONENT_TYPE_BYTE &&
-        componentType <= TINYGLTF_COMPONENT_TYPE_DOUBLE) {
+    // Any component type with a defined size: the glTF 2.0 ones, plus float64 and the glTF 2.1
+    // additions (float16, int64, uint64). Where a type may be used is up to the caller.
+    if (componentType <= 0xFFFFFFFFu &&
+        GetComponentSizeInBytes(static_cast<uint32_t>(componentType)) > 0) {
       // OK
       accessor->componentType = int(componentType);
     } else {
