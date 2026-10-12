@@ -8245,6 +8245,10 @@ static void SerializeGltfAsset(const Asset &asset, detail::json &o) {
   // TODO(syoyo): Do we need to check if `version` is greater or equal to 2.0?
   SerializeStringProperty("version", version, o);
 
+  if (!asset.minVersion.empty()) {
+    SerializeStringProperty("minVersion", asset.minVersion, o);
+  }
+
   if (asset.thumbnail != -1) {
     SerializeNumberProperty<int>("thumbnail", asset.thumbnail, o);
   }
